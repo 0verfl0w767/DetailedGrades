@@ -1,0 +1,10 @@
+node_modules/
+package-lock.json
+.env
+config.js
+index.js
+requests.js
+analyze.js
+course_details/
+analysis/
+grades/
