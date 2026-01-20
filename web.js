@@ -74,12 +74,6 @@ app.get("/api/collect/:stuno", (req, res) => {
       analyzeError += errorMsg;
     });
 
-    analyzeProcess.stderr.on("data", (data) => {
-      const errorMsg = data.toString();
-      console.error(`[analyze.js ERROR] ${errorMsg}`);
-      analyzeError += errorMsg;
-    });
-
     analyzeProcess.on("close", (code) => {
       if (code !== 0) {
         return res
@@ -102,7 +96,12 @@ app.get("/api/collect/:stuno", (req, res) => {
 });
 
 app.get("/api/courses", (req, res) => {
-  const stuno = req.query.stuno || config.STUDENT_ID;
+  const stuno = req.query.stuno;
+
+  if (!stuno) {
+    return res.status(400).json({ error: "학번을 입력해주세요" });
+  }
+
   const analysisData = loadAnalysisData(stuno);
 
   if (!analysisData) {
@@ -112,6 +111,8 @@ app.get("/api/courses", (req, res) => {
   const courses = analysisData.map((course, index) => ({
     id: index,
     courseName: course.KOR_SBJT_NM,
+    instructor: course.STF_NM,
+    division: course.CPTN_DIV_NM,
     yy: course.YY,
     shtmCd: course.SHTM_CD,
     myScore: course.myData.totalScore,
@@ -122,9 +123,37 @@ app.get("/api/courses", (req, res) => {
   res.json(courses);
 });
 
+app.get("/api/grades/:stuno", (req, res) => {
+  const { stuno } = req.params;
+
+  const gradesFileName = `grades_${stuno}.json`;
+  const gradesFilePath = path.join(__dirname, "grades", gradesFileName);
+
+  if (!fs.existsSync(gradesFilePath)) {
+    return res.status(404).json({ error: "석차 데이터를 찾을 수 없습니다" });
+  }
+
+  try {
+    const gradesData = JSON.parse(fs.readFileSync(gradesFilePath, "utf-8"));
+    const semesters = gradesData.map((sem) => ({
+      YY: sem.YY,
+      SHTM_CD: sem.SHTM_CD,
+      SUST_RANK: sem.SUST_RANK,
+    }));
+    res.json(semesters);
+  } catch (error) {
+    res.status(500).json({ error: "석차 데이터 읽기 실패" });
+  }
+});
+
 app.get("/api/courses/:id", (req, res) => {
   const { id } = req.params;
-  const stuno = req.query.stuno || config.STUDENT_ID;
+  const stuno = req.query.stuno;
+
+  if (!stuno) {
+    return res.status(400).json({ error: "학번을 입력해주세요" });
+  }
+
   const analysisData = loadAnalysisData(stuno);
 
   if (!analysisData) {
@@ -193,7 +222,11 @@ app.get("/", (req, res) => {
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
             max-height: 600px;
             overflow-y: scroll;
-            scrollbar-gutter: stable;
+            scrollbar-width: none;
+        }
+
+        .courses-list::-webkit-scrollbar {
+            display: none;
         }
 
         .courses-list h2 {
@@ -237,9 +270,9 @@ app.get("/", (req, res) => {
 
         .detail-panel {
             background: white;
-            border-radius: 10px;
-            padding: 30px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
         }
 
         .detail-panel.empty {
@@ -252,20 +285,24 @@ app.get("/", (req, res) => {
         }
 
         .detail-header {
-            border-bottom: 3px solid #667eea;
-            padding-bottom: 20px;
-            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+            padding-left: 20px;
+            padding-bottom: 25px;
+            margin-bottom: 30px;
         }
 
         .detail-header h2 {
             color: #333;
-            font-size: 1.8em;
-            margin-bottom: 10px;
+            font-size: 2em;
+            margin-bottom: 12px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
         }
 
         .semester-info {
-            color: #666;
+            color: #999;
             font-size: 0.95em;
+            font-weight: 500;
         }
 
         .stats-grid {
@@ -278,9 +315,16 @@ app.get("/", (req, res) => {
         .stat-card {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 20px;
-            border-radius: 8px;
+            padding: 28px 20px;
+            border-radius: 14px;
             text-align: center;
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 35px rgba(102, 126, 234, 0.3);
         }
 
         .stat-value {
@@ -295,25 +339,36 @@ app.get("/", (req, res) => {
         }
 
         .scores-section {
-            background: #f9f9f9;
-            padding: 20px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+            background: linear-gradient(135deg, #f8f9ff 0%, #f5f7ff 100%);
+            padding: 28px;
+            border-radius: 14px;
+            margin-bottom: 25px;
+            border: 1px solid #e8ecff;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
         }
 
         .scores-section h3 {
             color: #333;
-            margin-bottom: 15px;
-            font-size: 1.2em;
+            margin-bottom: 20px;
+            font-size: 1.25em;
+            font-weight: 700;
             border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
+            padding-bottom: 12px;
+            grid-column: 1 / -1;
+            letter-spacing: -0.3px;
+        }
+
+        .scores-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
         }
 
         .score-item {
             display: flex;
             justify-content: space-between;
-            padding: 10px 0;
-            border-bottom: 1px solid #eee;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
         }
 
         .score-item:last-child {
@@ -321,51 +376,124 @@ app.get("/", (req, res) => {
         }
 
         .score-label {
-            color: #666;
+            color: #555;
             font-weight: 500;
+            font-size: 0.95em;
         }
 
         .score-value {
             color: #667eea;
-            font-weight: bold;
+            font-weight: 600;
             font-size: 1.1em;
         }
 
         .top-students {
-            background: #f0f4ff;
-            padding: 20px;
-            border-radius: 8px;
+            background: linear-gradient(135deg, #f8f9ff 0%, #f5f7ff 100%);
+            padding: 28px;
+            border-radius: 14px;
+            border: 1px solid #e8ecff;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
         }
 
         .top-students h3 {
             color: #333;
-            margin-bottom: 15px;
-            font-size: 1.2em;
+            margin-bottom: 20px;
+            font-size: 1.25em;
+            font-weight: 700;
             border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
+            padding-bottom: 12px;
+            letter-spacing: -0.3px;
+        }
+
+        .grade-distribution {
+            background: linear-gradient(135deg, #f8f9ff 0%, #f5f7ff 100%);
+            padding: 28px;
+            border-radius: 14px;
+            margin-bottom: 25px;
+            border: 1px solid #e8ecff;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+        }
+
+        .grade-distribution h3 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.25em;
+            font-weight: 700;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 12px;
+            letter-spacing: -0.3px;
+        }
+
+        .grade-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 14px;
+            padding: 12px 14px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            transition: all 0.2s ease;
+        }
+
+        .grade-item:hover {
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+            transform: translateX(2px);
+        }
+
+        .grade-label {
+            min-width: 45px;
+            font-weight: 700;
+            color: #667eea;
+            font-size: 1.05em;
+        }
+
+        .grade-bar {
+            height: 22px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            margin: 0 14px;
+            border-radius: 6px;
+            position: relative;
+            overflow: hidden;
+            min-width: 50px;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.15);
+        }
+
+        .grade-info {
+            min-width: 90px;
+            text-align: right;
+            color: #666;
+            font-size: 0.9em;
+            font-weight: 500;
         }
 
         .top-student-item {
-            padding: 12px;
+            padding: 14px 16px;
             background: white;
-            margin-bottom: 10px;
-            border-radius: 4px;
-            border-left: 3px solid #ffc107;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            border-left: 4px solid #667eea;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+            transition: all 0.2s ease;
+        }
+
+        .top-student-item:hover {
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.1);
+            transform: translateX(2px);
         }
 
         .student-rank {
-            font-weight: bold;
-            color: #ffc107;
-            font-size: 1.2em;
-            min-width: 30px;
+            font-weight: 700;
+            color: #667eea;
+            font-size: 1.15em;
+            min-width: 35px;
         }
 
         .student-info {
             flex-grow: 1;
-            margin-left: 15px;
+            margin-left: 16px;
         }
 
         .student-name {
@@ -379,41 +507,102 @@ app.get("/", (req, res) => {
         }
 
         .student-input-section {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
-            margin-bottom: 20px;
+            background: linear-gradient(135deg, #f8f9ff 0%, #f5f7ff 100%);
+            border-radius: 12px;
+            padding: 18px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
             display: flex;
             gap: 10px;
+            border: 1px solid #e8ecff;
+            margin-bottom: 15px;
         }
 
         .student-input-section input {
             flex: 1;
-            padding: 10px;
-            border: 2px solid #667eea;
-            border-radius: 5px;
-            font-size: 1em;
+            padding: 12px 14px;
+            border: 1.5px solid #d0d7ff;
+            border-radius: 8px;
+            font-size: 0.95em;
+            outline: none;
+            transition: all 0.2s ease;
+        }
+
+        .student-input-section input:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
 
         .student-input-section button {
-            padding: 10px 20px;
+            padding: 11px 20px;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 8px;
             cursor: pointer;
-            font-weight: bold;
-            transition: transform 0.2s;
+            font-weight: 600;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+            white-space: nowrap;
+            font-size: 0.95em;
         }
 
         .student-input-section button:hover {
-            transform: scale(1.05);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .student-input-section button:active {
+            transform: translateY(0);
         }
 
         .current-student {
             color: #667eea;
             font-weight: bold;
+        }
+
+        .semester-ranks-section {
+            background: linear-gradient(135deg, #f8f9ff 0%, #f5f7ff 100%);
+            border-radius: 12px;
+            padding: 14px;
+            margin-bottom: 18px;
+            border: 1px solid #e8ecff;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
+        }
+
+        .semester-ranks-section h3 {
+            color: #333;
+            font-size: 0.95em;
+            font-weight: 700;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+            letter-spacing: -0.3px;
+        }
+
+        .semester-rank-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .semester-rank-item:last-child {
+            border-bottom: none;
+        }
+
+        .semester-rank-label {
+            color: #555;
+            font-weight: 500;
+            font-size: 0.9em;
+        }
+
+        .semester-rank-value {
+            color: #667eea;
+            font-weight: 700;
+            font-size: 1em;
+            min-width: 50px;
+            text-align: right;
         }
 
         .student-score {
@@ -452,19 +641,24 @@ app.get("/", (req, res) => {
 </head>
 <body>
     <div class="container">
-        <div class="student-input-section">
-            <input
-                type="text"
-                id="studentInput"
-                placeholder="학번을 입력하세요"
-            />
-            <button onclick="loadStudent()">조회</button>
-        </div>
-
         <div class="content">
-            <div class="courses-list" id="coursesList">
-                <h2>과목 목록</h2>
-                <div class="loading">로드 중...</div>
+            <div>
+                <div class="student-input-section">
+                    <input
+                        type="text"
+                        id="studentInput"
+                        placeholder="학번을 입력하세요"
+                    />
+                    <button onclick="loadStudent()">조회</button>
+                </div>
+                <div id="semesterRanksSection" style="display: none;" class="semester-ranks-section">
+                    <h3>학기별 석차</h3>
+                    <div id="semesterRanks"></div>
+                </div>
+                <div class="courses-list" id="coursesList">
+                    <h2>과목 목록</h2>
+                    <div class="loading">로드 중...</div>
+                </div>
             </div>
             <div class="detail-panel" id="detailPanel">
                 <div class="empty">
@@ -522,6 +716,35 @@ app.get("/", (req, res) => {
                 const response = await fetch('/api/courses?stuno=' + currentStudent);
                 courses = await response.json();
 
+                try {
+                    const gradesPath = '/api/grades/' + currentStudent;
+                    const gradesResponse = await fetch(gradesPath);
+                    if (gradesResponse.ok) {
+                        const gradesData = await gradesResponse.json();
+                        const semesterRanksSection = document.getElementById('semesterRanksSection');
+                        const semesterRanksDiv = document.getElementById('semesterRanks');
+                        
+                        if (gradesData.length > 0) {
+                            let html = '';
+                            gradesData.forEach(semester => {
+                                const semesterText = semester.SHTM_CD === '10' ? '1학기' : '2학기';
+                                const rankValue = semester.SUST_RANK ? semester.SUST_RANK + '등' : '미상';
+                                html += \`
+                                    <div class="semester-rank-item">
+                                        <span class="semester-rank-label">\${semester.YY}년 \${semesterText}</span>
+                                        <span class="semester-rank-value">\${rankValue}</span>
+                                    </div>
+                                \`;
+                            });
+                            
+                            semesterRanksDiv.innerHTML = html;
+                            semesterRanksSection.style.display = 'block';
+                        }
+                    }
+                } catch (e) {
+                    console.log('석차 데이터 로드 불가:', e);
+                }
+
                 const coursesList = document.getElementById('coursesList');
                 coursesList.innerHTML = '<h2>과목 목록</h2>';
 
@@ -549,7 +772,10 @@ app.get("/", (req, res) => {
                         item.className = 'course-item';
                         item.innerHTML = \`
                             <div class="course-name">\${course.courseName}</div>
-                            <div class="course-meta">점수: \${course.myScore.toFixed(2)} | 등수: \${course.myRank}/\${course.totalStudents}</div>
+                            <div class="course-meta" style="font-size: 0.9em; color: #999; margin-top: 2px;">
+                                \${course.instructor || '교수명 미상'} | \${course.division || '이수구분 미상'}
+                            </div>
+                            <div class="course-meta">점수: \${course.myScore.toFixed(2)} | 석차: \${course.myRank}/\${course.totalStudents}</div>
                         \`;
                         item.onclick = () => selectCourse(course);
                         coursesList.appendChild(item);
@@ -575,12 +801,13 @@ app.get("/", (req, res) => {
                     <div class="detail-header">
                         <h2>\${data.KOR_SBJT_NM}</h2>
                         <div class="semester-info">\${data.YY}년 \${shtmText} | 강의번호: \${data.LECT_NO}</div>
+                        <div class="semester-info" style="color: #666; margin-top: 5px;">교수: \${data.STF_NM || '미상'} | 이수: \${data.CPTN_DIV_NM || '미상'}</div>
                     </div>
 
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-value">\${data.rank} <span style="font-size: 0.6em; opacity: 0.8;">/ \${data.totalStudents}</span></div>
-                            <div class="stat-label">등수</div>
+                            <div class="stat-label">석차</div>
                         </div>
                         <div class="stat-card">
                             <div class="stat-value">\${data.myData.totalScore.toFixed(2)}</div>
@@ -592,39 +819,56 @@ app.get("/", (req, res) => {
                         </div>
                     </div>
 
+                    <div class="grade-distribution">
+                        <h3>성적 분포</h3>
+                        \${data.gradeDistribution.map(item => \`
+                            <div class="grade-item">
+                                <div class="grade-label">\${item.grade}</div>
+                                <div class="grade-bar" style="width: \${item.percentage}%;"></div>
+                                <div class="grade-info">\${item.count}명 (\${item.percentage}%)</div>
+                            </div>
+                        \`).join('')}
+                    </div>
+
                     <div class="scores-section">
                         <h3>성적 세부사항</h3>
-                        <div class="score-item">
-                            <span class="score-label">성적 등급</span>
-                            <span class="score-value">\${data.myData.grade}</span>
-                        </div>
-                        <div class="score-item">
-                            <span class="score-label">과제점수</span>
-                            <span class="score-value">\${data.myData.scores.homework}</span>
-                        </div>
-                        <div class="score-item">
-                            <span class="score-label">중간고사</span>
-                            <span class="score-value">\${data.myData.scores.midterm}</span>
-                        </div>
-                        <div class="score-item">
-                            <span class="score-label">기말고사</span>
-                            <span class="score-value">\${data.myData.scores.final}</span>
-                        </div>
-                        <div class="score-item">
-                            <span class="score-label">출석점수</span>
-                            <span class="score-value">\${data.myData.scores.attendance}</span>
-                        </div>
-                        <div class="score-item">
-                            <span class="score-label">기타점수</span>
-                            <span class="score-value">\${data.myData.scores.etc}</span>
-                        </div>
-                        <div class="score-item">
-                            <span class="score-label">퀴즈점수</span>
-                            <span class="score-value">\${data.myData.scores.quiz}</span>
-                        </div>
-                        <div class="score-item">
-                            <span class="score-label">가산점</span>
-                            <span class="score-value">\${data.myData.scores.extra}</span>
+                        <div class="scores-container">
+                            <div>
+                                <div class="score-item">
+                                    <span class="score-label">성적 등급</span>
+                                    <span class="score-value">\${data.myData.grade}</span>
+                                </div>
+                                <div class="score-item">
+                                    <span class="score-label">출석점수</span>
+                                    <span class="score-value">\${data.myData.scores.attendance}</span>
+                                </div>
+                                <div class="score-item">
+                                    <span class="score-label">중간고사</span>
+                                    <span class="score-value">\${data.myData.scores.midterm}</span>
+                                </div>
+                                <div class="score-item">
+                                    <span class="score-label">기말고사</span>
+                                    <span class="score-value">\${data.myData.scores.final}</span>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="score-item">
+                                    <span class="score-label">과제점수</span>
+                                    <span class="score-value">\${data.myData.scores.homework}</span>
+                                </div>
+                                <div class="score-item">
+                                    <span class="score-label">퀴즈점수</span>
+                                    <span class="score-value">\${data.myData.scores.quiz}</span>
+                                </div>
+                                <div class="score-item">
+                                    <span class="score-label">기타점수</span>
+                                    <span class="score-value">\${data.myData.scores.etc}</span>
+                                </div>
+                                <div class="score-item">
+                                    <span class="score-label">가산점</span>
+                                    <span class="score-value">\${data.myData.scores.extra}</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -648,9 +892,6 @@ app.get("/", (req, res) => {
                 console.error('과목 정보 로드 실패:', error);
             }
         }
-
-
-        // 페이지 로드 시 과목 목록을 로드하지 않음 (사용자 입력 대기)
     </script>
 </body>
 </html>
